@@ -1,0 +1,53 @@
+name: fwm_sys
+description: "A new Flutter project."
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  http: ^1.5.0
+  image_picker: ^1.2.0
+  shared_preferences: ^2.5.3
+  flutter_launcher_icons: "^0.13.1"
+  intl: ^0.20.2
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+# 🎯 START OF APP ICON CONFIGURATION 🎯
+# This section must be a top-level entry, aligned with 'name' and 'version'.
+flutter_launcher_icons:
+  android: "launcher_icon" # Name of the generated Android icon
+  ios: true                # Enable icon generation for iOS
+  image_path: "assets/icon/icon.png" # ⬅️ Define the path to your image
+  min_sdk_android: 21      # Recommended setting for wide compatibility
+# 🎯 END OF APP ICON CONFIGURATION 🎯
+
+flutter:
+  uses-material-design: true
+
+  # ⚠️ You must also declare your assets folder here:
+  assets:
+    - assets/icon/
+    - assets/images/
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/a_dot_burr.jpeg
+  #   - images/a_dot_ham.jpeg
+
+  # ... (rest of your flutter section)
