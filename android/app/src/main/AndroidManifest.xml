@@ -1,9 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- CORE PERMISSIONS -->
+    <uses-permission android:name="android.permission.INTERNET" /> 
+    
+    <!-- LOCATION PERMISSIONS (Required for Map Button and Geocoding) -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- IMAGE/PHOTO PERMISSIONS (Required for Restaurant Food Post upload) -->
+    <!-- Note: android:maxSdkVersion="32" is used as modern Android handles photo access differently. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+
+
     <application
         android:label="FoodShare"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
-        android:usesCleartextTraffic="true">  <activity
+        android:usesCleartextTraffic="true">
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
@@ -25,7 +40,22 @@
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
+
+    <!-- CRITICAL QUERIES BLOCK (Required for Map Launching on Android 11+/API 30+) -->
     <queries>
+        <!-- Allows launching Google Maps or other geo-scheme apps (FIXES MAP ISSUE) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        
+        <!-- Allows launching general web-based map URLs (like HTTPS) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+
+        <!-- Existing intent (kept for completeness) -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

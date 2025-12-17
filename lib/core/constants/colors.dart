@@ -2,23 +2,28 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   // Main Theme Colors
+  // Professional Deep Blue & Warm Coral/Terracotta theme
   static const Color primary = Color(
-    0xFF00ACC1,
-  ); // Deep Cyan/Teal (Modern and Clean)
+    0xFF0D47A1,
+  ); // Deep Blue (Trust, Reliability, Professionalism)
   static const Color accent = Color(
-    0xFF5C6BC0,
-  ); // Soft Indigo/Blue for secondary actions
-  static const Color background = Color(0xFFF5F5F5); // Light grey background
+    0xFFFF7043,
+  ); // Vibrant Coral/Terracotta (Food, Action, Warmth, Urgency)
+  static const Color background = Color(0xFFEEEEEE); // Soft neutral background
 
   // Card Backgrounds
-  static const Color cardBgHotel = Color(0xFFE0F7FA); // Very light cyan
-  static const Color cardBgNgo = Color(0xFFE8EAF6); // Very light lavender/blue
+  static const Color cardBgHotel = Color(
+    0xFFFFFFFF,
+  ); // Crisp White for hotel cards (Cleanliness, Service)
+  static const Color cardBgNgo = Color(
+    0xFFFBE9E7,
+  ); // Very light peach/coral tint for NGO cards (Community, Hope, Relief)
 
   // Text and Status Colors
-  static const Color textPrimary = Color(0xFF263238); // Dark Slate Grey
-  static const Color textSecondary = Color(0xFF78909C); // Cool grey
-  static const Color success = Color(0xFF66BB6A); // Soft Success Green
-  static const Color info = Color(0xFF42A5F5); // Standard Info Blue
-  static const Color warning = Color(0xFFFFCA28); // Bright Yellow/Amber
-  static const Color error = Color(0xFFEF5350); // Standard Error Red
+  static const Color textPrimary = Color(0xFF212121); // Dark Charcoal
+  static const Color textSecondary = Color(0xFF616161); // Medium Neutral Grey
+  static const Color success = Color(0xFF4CAF50); // Standard Success Green
+  static const Color info = Color(0xFF1976D2); // Standard Info Blue
+  static const Color warning = Color(0xFFFFB300); // Standard Amber
+  static const Color error = Color(0xFFD32F2F); // Standard Error Red
 }

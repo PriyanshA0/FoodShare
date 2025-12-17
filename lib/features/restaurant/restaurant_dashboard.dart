@@ -7,11 +7,71 @@ import 'package:fwm_sys/features/restaurant/history_analytics_screen.dart';
 import 'package:fwm_sys/features/common/profile_screen.dart';
 import 'package:fwm_sys/features/auth/login_screen.dart';
 import 'package:fwm_sys/features/common/notifications_screen.dart';
+import 'dart:async'; // Required for Timer
 
-class RestaurantDashboard extends StatelessWidget {
+class RestaurantDashboard extends StatefulWidget {
   const RestaurantDashboard({super.key});
 
+  @override
+  State<RestaurantDashboard> createState() => _RestaurantDashboardState();
+}
+
+class _RestaurantDashboardState extends State<RestaurantDashboard> {
+  // CRITICAL: Future to hold the combined data fetch result
+  late Future<Map<String, dynamic>> _compositeDataFuture;
+  late Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    // 1. Initial Data Fetch
+    _fetchRestaurantCompositeData();
+    // 2. Setup Auto-Refresh Timer
+    _startAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    // CRITICAL: Stop the timer when the widget is removed
+    _timer.cancel();
+    super.dispose();
+  }
+
+  void _startAutoRefresh() {
+    // FIX: Changed refresh interval from 1 second to 5 seconds to prevent blinking.
+    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted) {
+        _fetchRestaurantCompositeData();
+      }
+    });
+  }
+
+  void _fetchRestaurantCompositeData() {
+    final statsFuture = ApiService().fetchDashboardStats();
+    final userFuture = ApiService().fetchUserData();
+    final activityFuture = ApiService().fetchRecentActivity();
+
+    // The setState wrapper around the Future assignment triggers the FutureBuilder rebuild.
+    setState(() {
+      // Use .catchError() on the combined future to handle errors gracefully
+      _compositeDataFuture = Future.wait([statsFuture, userFuture, activityFuture])
+          .then((results) {
+            return {
+              'stats': results[0],
+              'user_data': results[1],
+              'activity': results[2],
+            };
+          })
+          .catchError((e) {
+            // CRITICAL: Throw the error so the FutureBuilder captures the detailed message.
+            throw Exception(e.toString());
+          });
+    });
+  }
+
   Future<void> _handleLogout(BuildContext context) async {
+    // Stop refresh before logging out
+    _timer.cancel();
     await ApiService().logout();
     if (context.mounted) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -21,44 +81,38 @@ class RestaurantDashboard extends StatelessWidget {
     }
   }
 
-  Future<Map<String, dynamic>> _fetchRestaurantCompositeData() async {
-    final statsFuture = ApiService().fetchDashboardStats();
-    final userFuture = ApiService().fetchUserData();
-    final activityFuture = ApiService().fetchRecentActivity();
-
-    final results = await Future.wait([
-      statsFuture,
-      userFuture,
-      activityFuture,
-    ]);
-
-    return {
-      'stats': results[0],
-      'user_data': results[1],
-      'activity': results[2],
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>>(
-      future: _fetchRestaurantCompositeData(),
+      future: _compositeDataFuture,
       builder: (context, snapshot) {
         final data = snapshot.data;
         final bool isLoading =
             snapshot.connectionState == ConnectionState.waiting;
         final bool hasError = snapshot.hasError;
 
+        // This conditional logic allows the screen to stay visible and only shows
+        // the loading indicator on the FIRST load, or error state.
         if (hasError) {
-          return Center(child: Text('Failed to load data: ${snapshot.error}'));
+          // Display the full, detailed error message from the exception
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Text(
+                'Dashboard Load Error: ${snapshot.error}',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.error),
+              ),
+            ),
+          );
         }
 
-        if (isLoading || !snapshot.hasData) {
+        if (data == null) {
           return const Center(child: CircularProgressIndicator());
         }
 
         // Data is ready, build the Scaffold
-        final stats = data!['stats'] ?? {};
+        final stats = data['stats'] ?? {};
         final userData = data['user_data'] ?? {};
         final activityList = data['activity'] ?? [];
 
@@ -131,7 +185,7 @@ class RestaurantDashboard extends StatelessWidget {
             actions: [
               IconButton(
                 icon: const Badge(
-                  label: Text('2'),
+                  //label: Text('2'),
                   child: Icon(
                     Icons.notifications_none,
                     color: AppColors.textPrimary,
@@ -307,7 +361,7 @@ class RestaurantDashboard extends StatelessWidget {
     );
   }
 
-  // --- Helper methods (Omitted for brevity) ---
+  // --- Helper methods (Copied from original snippet for completeness) ---
   Widget _buildStatCard({
     required String title,
     required String value,

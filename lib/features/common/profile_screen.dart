@@ -1,8 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:fwm_sys/core/constants/colors.dart';
 import 'package:fwm_sys/core/services/api_service.dart';
-import 'package:fwm_sys/models/user_model.dart';
+import 'package:fwm_sys/models/user_model.dart'; // Ensure UserModel.dart is available
 import 'package:fwm_sys/features/common/edit_profile_screen.dart';
+import 'package:fwm_sys/features/auth/login_screen.dart';
+import 'dart:async';
+
+// Helper model to hold combined data
+class ProfileData {
+  final User user;
+  final Map<String, dynamic> stats;
+
+  ProfileData({required this.user, required this.stats});
+}
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -12,21 +22,31 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  Future<User>? _userData;
+  Future<ProfileData>? _profileDataFuture;
 
   @override
   void initState() {
     super.initState();
-    _userData = _fetchUserData();
+    // Start fetching combined user data and stats immediately
+    _profileDataFuture = _fetchCombinedData();
   }
 
-  Future<User> _fetchUserData() async {
+  // --- Fetches unified user data and dashboard stats ---
+  Future<ProfileData> _fetchCombinedData() async {
     try {
-      final response = await ApiService().fetchUserData();
-      // Use the corrected User.fromJson factory
-      return User.fromJson(response);
+      final userFuture = ApiService().fetchUserData();
+      final statsFuture = ApiService().fetchDashboardStats();
+
+      final results = await Future.wait([userFuture, statsFuture]);
+
+      final Map<String, dynamic> userData = results[0];
+      final Map<String, dynamic> statsData = results[1];
+
+      final user = User.fromJson(userData);
+
+      return ProfileData(user: user, stats: statsData);
     } catch (e) {
-      throw Exception(e);
+      throw Exception('Failed to fetch user profile or stats: $e');
     }
   }
 
@@ -38,7 +58,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (result == true && mounted) {
       setState(() {
-        _userData = _fetchUserData();
+        // Refresh data after successful edit
+        _profileDataFuture = _fetchCombinedData();
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile updated successfully!')),
@@ -46,14 +67,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // CRITICAL: Professional Logout Handler
+  Future<void> _handleLogout(BuildContext context) async {
+    await ApiService().logout();
+
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        (Route<dynamic> route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<User>(
-      future: _userData,
+    return FutureBuilder<ProfileData>(
+      future: _profileDataFuture,
       builder: (context, snapshot) {
         if (snapshot.hasData) {
-          final user = snapshot.data!;
+          final profileData = snapshot.data!;
+          final user = profileData.user;
+          final stats = profileData.stats;
+
           return Scaffold(
+            key: ValueKey(user.id),
             backgroundColor: AppColors.background,
             appBar: AppBar(
               title: const Text('Back to Dashboard'),
@@ -67,10 +104,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ],
             ),
-            body: _buildProfileBody(context, user),
+            body: _buildProfileBody(context, user, stats), // PASS STATS
           );
         } else {
-          // Handle Loading and Errors (Omitting for brevity, assume correct)
+          // Handle Loading and Errors
           return Scaffold(
             backgroundColor: AppColors.background,
             appBar: AppBar(
@@ -85,7 +122,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _handleLoadingAndErrorStates(AsyncSnapshot<User> snapshot) {
+  Widget _handleLoadingAndErrorStates(AsyncSnapshot<ProfileData> snapshot) {
     if (snapshot.connectionState == ConnectionState.waiting) {
       return const Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -104,14 +141,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const Icon(Icons.error_outline, size: 64, color: AppColors.error),
             const SizedBox(height: 16),
             Text(
-              'Error Loading Profile: ${snapshot.error}',
+              // Show the specific error if possible
+              'Error Loading Profile: ${snapshot.error.toString().split(':')[1].trim()}',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(color: AppColors.error),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: () => setState(() {
-                _userData = _fetchUserData();
+                _profileDataFuture = _fetchCombinedData();
               }),
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
@@ -126,11 +164,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return const Text('No profile data available.');
   }
 
-  Widget _buildProfileBody(BuildContext context, User user) {
+  // Helper for the custom logout button tile
+  Widget _buildLogoutTile(BuildContext context) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.only(top: 20, bottom: 20),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: const Icon(Icons.exit_to_app, color: AppColors.error),
+        title: const Text(
+          'Log Out',
+          style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold),
+        ),
+        trailing: const Icon(Icons.chevron_right, color: AppColors.error),
+        onTap: () => _handleLogout(context),
+      ),
+    );
+  }
+
+  Widget _buildProfileBody(
+    BuildContext context,
+    User user,
+    Map<String, dynamic> stats,
+  ) {
     bool isRestaurant = user.role == 'restaurant';
     Color roleColor = isRestaurant ? AppColors.success : AppColors.info;
 
-    // Use actual data for display
+    // --- Dynamic Labels based on Role ---
     String verificationLabel = isRestaurant
         ? 'License/ID Proof Number'
         : 'Registration Certificate No.';
@@ -138,10 +198,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ? 'Business Name'
         : 'Organization Name';
 
-    // Mock Stats (to be replaced by dedicated API calls later)
-    int totalCount = isRestaurant ? 4 : 2;
-    int completedCount = 1;
-    int activeCount = isRestaurant ? 3 : 1;
+    // --- REAL STATS EXTRACTION ---
+    // Safely extract and parse completed orders count
+    final int completedCount =
+        int.tryParse(stats['completed_orders']?.toString() ?? '0') ?? 0;
+
+    // Safely extract and parse active orders count (for NGO)
+    final int activeOrdersStats =
+        int.tryParse(stats['active_orders']?.toString() ?? '0') ?? 0;
+
+    // Total posts/collections count
+    final int totalPostsStats =
+        int.tryParse(stats['total_posts_or_collections']?.toString() ?? '0') ??
+        0;
+
+    // Total count logic: Total posts for Restaurant, or (Completed + Active) for NGO
+    final int totalCount = isRestaurant
+        ? totalPostsStats
+        : completedCount + activeOrdersStats;
+
+    // Active orders are pending/in_transit
+    final int activeCount = isRestaurant
+        ? totalPostsStats -
+              completedCount // Posts that aren't completed yet (Resto)
+        : activeOrdersStats; // Active orders (NGO)
+    // ------------------------------------
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -170,8 +251,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 Text(
+                  // Display Owner Name for Restaurant, Contact Person for NGO
                   user.contactPerson ??
-                      (isRestaurant ? 'Owner Name' : 'Contact Person'),
+                      (isRestaurant ? 'Owner/Manager' : 'Contact Person'),
                   style: TextStyle(
                     fontSize: 16,
                     color: AppColors.textSecondary,
@@ -203,13 +285,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
 
-          // 2. STATS CARDS
+          // 2. STATS CARDS (NOW REAL DATA)
           _buildStatsCard(
             isRestaurant ? 'Total Donations' : 'Total Collections',
-            totalCount.toString(),
+            totalCount.toString(), // <--- USING REAL DATA
           ),
-          _buildStatsCard('Completed', completedCount.toString()),
-          _buildStatsCard('Active', activeCount.toString()),
+          _buildStatsCard(
+            'Completed',
+            completedCount.toString(),
+          ), // <--- USING REAL DATA
+          _buildStatsCard(
+            'Active',
+            activeCount.toString(),
+          ), // <--- USING REAL DATA
 
           const SizedBox(height: 20),
 
@@ -247,7 +335,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 businessDetailLabel,
                 user.name ?? 'N/A',
               ),
-              if (user.volunteersCount != null && user.volunteersCount! > 0)
+              // Only show volunteer count for NGO
+              if (user.volunteersCount != null && !isRestaurant)
                 _buildDetailRow(
                   Icons.people,
                   'Number of Volunteers',
@@ -258,15 +347,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           const SizedBox(height: 20),
 
-          // 5. ACHIEVEMENT BADGE
+          // 5. ACHIEVEMENT BADGE (MOCKED)
           _buildAchievementBadge(isRestaurant, completedCount),
+
+          // 6. PROFESSIONAL LOGOUT BUTTON
+          _buildLogoutTile(context),
+
           const SizedBox(height: 20),
         ],
       ),
     );
   }
 
-  // --- Helper Methods (_buildStatsCard, _buildInfoCard, etc.) must be defined below ---
+  // --- Helper Methods (Stats, InfoCard, DetailRow, AchievementBadge) ---
 
   Widget _buildStatsCard(String label, String value) {
     return Card(

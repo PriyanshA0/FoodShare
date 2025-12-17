@@ -81,75 +81,62 @@ class OrderDetailsScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // --- MAIN DETAILS & SIDEBAR ---
-                Row(
+                // --- STACKED DETAILS (Single Column) ---
+                // Replaced the Row layout with a single Column for mobile-friendly stacking
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // LEFT COLUMN (Main Card, Contact, Timeline)
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Donation Card
-                          _buildDonationDetailsCard(donation),
-                          const SizedBox(height: 20),
-                          // Contact Information
-                          const Text(
-                            'Contact Information',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _buildContactCard(donation),
-                          const SizedBox(height: 20),
-                          // Order Timeline
-                          const Text(
-                            'Order Timeline',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _buildTimeline(donation),
-                          const SizedBox(height: 40),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // RIGHT COLUMN (Quick Actions, Order Summary)
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Quick Actions',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _buildQuickActions(context, donation.status),
-                          const SizedBox(height: 20),
+                    // 1. Donation Card
+                    _buildDonationDetailsCard(donation),
+                    const SizedBox(height: 20),
 
-                          const Text(
-                            'Order Summary',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _buildSummaryCard(donation, statusColor),
-                          const SizedBox(height: 20),
-                        ],
+                    // 2. Contact Information
+                    const Text(
+                      'Contact Information',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    _buildContactCard(donation),
+                    const SizedBox(height: 20),
+
+                    // 3. Quick Actions
+                    const Text(
+                      'Quick Actions',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildQuickActions(context, donation.status),
+                    const SizedBox(height: 20),
+
+                    // 4. Order Summary
+                    const Text(
+                      'Order Summary',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildSummaryCard(donation, statusColor),
+                    const SizedBox(height: 20),
+
+                    // 5. Order Timeline
+                    const Text(
+                      'Order Timeline',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildTimeline(donation),
+                    const SizedBox(height: 40),
                   ],
                 ),
               ],
@@ -175,9 +162,10 @@ class OrderDetailsScreen extends StatelessWidget {
   }
 
   Widget _buildDonationDetailsCard(Donation donation) {
+    // Improved placeholder for better visual fallback
     final imageUrl = donation.imageUrl?.isNotEmpty == true
         ? donation.imageUrl!
-        : 'https://placehold.co/100x100/CCCCCC/000000?text=Food';
+        : 'https://placehold.co/100x100/A3E4D7/000000?text=Food+Image';
 
     return Card(
       elevation: 2,
@@ -194,6 +182,13 @@ class OrderDetailsScreen extends StatelessWidget {
                 height: 100,
                 width: 100,
                 fit: BoxFit.cover,
+                // Handle image load error to display the placeholder gracefully
+                errorBuilder: (context, error, stackTrace) => Image.network(
+                  'https://placehold.co/100x100/A3E4D7/000000?text=Load+Error',
+                  height: 100,
+                  width: 100,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             const SizedBox(width: 15),
@@ -233,6 +228,12 @@ class OrderDetailsScreen extends StatelessWidget {
                     Icons.location_on,
                     donation.pickupLocation ?? 'N/A',
                   ),
+                  // Display Coordinates if available
+                  if (donation.latitude != null && donation.longitude != null)
+                    _buildDetailRow(
+                      Icons.gps_fixed,
+                      'Lat: ${donation.latitude!.toStringAsFixed(4)}, Lon: ${donation.longitude!.toStringAsFixed(4)}',
+                    ),
                 ],
               ),
             ),

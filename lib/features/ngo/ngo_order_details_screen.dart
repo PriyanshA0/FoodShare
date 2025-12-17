@@ -137,8 +137,6 @@ class _NGOOrderDetailsScreenState extends State<NGOOrderDetailsScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // --- NEW: SINGLE COLUMN FLOW ---
-
                 // 1. MAIN DETAILS CARD
                 _buildDonationDetailsCard(donation),
                 const SizedBox(height: 20),

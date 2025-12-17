@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fwm_sys/core/constants/colors.dart';
 import 'package:fwm_sys/core/services/api_service.dart';
 import 'package:fwm_sys/models/user_model.dart';
+import 'package:geocoding/geocoding.dart'; // REQUIRED
 
 class EditProfileScreen extends StatefulWidget {
   final User user;
@@ -20,13 +21,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
   late TextEditingController _contactController;
   late TextEditingController _addressController;
-  // NEW: Controller for the Contact Person / Owner Name
   late TextEditingController _contactPersonController;
 
   @override
   void initState() {
     super.initState();
-    // Initialize controllers with current user data
     _nameController = TextEditingController(text: widget.user.name);
     _contactController = TextEditingController(text: widget.user.contactNumber);
     _addressController = TextEditingController(text: widget.user.address);
@@ -44,6 +43,49 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
+  // --- ROBUST GEOLOCATION LOGIC: Address to Coordinates ---
+  Future<Map<String, double?>?> _geocodeAddress(String address) async {
+    try {
+      if (address.isEmpty) return null;
+
+      List<Location> locations = await locationFromAddress(address);
+
+      if (locations.isNotEmpty) {
+        // Log coordinates for debugging
+        print(
+          'Geocoding Success: Lat=${locations.first.latitude}, Lon=${locations.first.longitude}',
+        );
+        return {
+          'latitude': locations.first.latitude,
+          'longitude': locations.first.longitude,
+        };
+      }
+
+      // If locations is empty, address was not found/invalid
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Address not recognized. Please check the spelling.'),
+          ),
+        );
+      }
+      return null;
+    } catch (e) {
+      if (mounted) {
+        // Log and report the specific geocoding error
+        print('Geocoding Failed with Error: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Geocoding Error: Check your internet or address format. ($e)',
+            ),
+          ),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -51,15 +93,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _isLoading = true;
     });
 
+    // 1. Geocode the address
+    final location = await _geocodeAddress(_addressController.text);
+
+    final double? lat = location?['latitude'];
+    final double? lon = location?['longitude'];
+
     try {
       final response = await _apiService.updateProfile(
         name: _nameController.text,
         contactNumber: _contactController.text,
         address: _addressController.text,
-        contactPerson: _contactPersonController.text, // PASS NEW FIELD
+        contactPerson: _contactPersonController.text,
+        latitude: lat,
+        longitude: lon,
       );
 
       if (mounted) {
+        // Log response for debugging server failure
+        print('API Response: ${response['message']}');
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -67,13 +120,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
           ),
         );
-        Navigator.pop(context, true); // Pop and return true to signal success
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to save changes: $e')));
+        // Logging the full error object for diagnosing connection vs. API issues
+        print('--- CRITICAL API ERROR ---');
+        print('Exception Type: ${e.runtimeType}');
+        print('Full Error: $e');
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to connect or API error: $e')),
+        );
       }
     } finally {
       if (mounted) {
@@ -113,7 +171,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           key: _formKey,
           child: Column(
             children: [
-              // NEW: Contact Person Field (Owner/Contact)
               _buildTextField(
                 controller: _contactPersonController,
                 label: isRestaurant ? 'Owner Name' : 'Contact Person Name',
@@ -135,7 +192,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               const SizedBox(height: 16),
               _buildTextField(
                 controller: _addressController,
-                label: 'Address',
+                label: 'Address (Required for Map)',
                 icon: Icons.location_on,
                 maxLines: 3,
               ),

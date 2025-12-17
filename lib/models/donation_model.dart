@@ -13,12 +13,17 @@ class Donation {
   final String? ngoName;
   final String? postedAt;
 
-  // --- ADDED LIFECYCLE TIMESTAMPS ---
+  // --- LIFECYCLE TIMESTAMPS ---
   final String? acceptedAt;
   final String? inTransitAt;
   final String? pickedUpAt;
-  // --- ADDED CONTACT DETAILS ---
+  // --- CONTACT DETAILS ---
   final String? restaurantContact;
+
+  // --- LOCATION FIELDS ---
+  // These fields match the ones used in the OrderDetailsScreen
+  final double? latitude;
+  final double? longitude;
 
   Donation({
     required this.id,
@@ -36,6 +41,9 @@ class Donation {
     this.inTransitAt,
     this.pickedUpAt,
     this.restaurantContact,
+    // Using donation-specific location fields
+    this.latitude,
+    this.longitude,
   });
 
   factory Donation.fromJson(Map<String, dynamic> json) {
@@ -57,6 +65,11 @@ class Donation {
       inTransitAt: json['in_transit_at'],
       pickedUpAt: json['picked_up_at'],
       restaurantContact: json['restaurant_contact'],
+
+      // --- MAP LOCATION FIELDS ---
+      // Mapping donation record's location fields (latitude, longitude)
+      latitude: double.tryParse(json['latitude']?.toString() ?? ''),
+      longitude: double.tryParse(json['longitude']?.toString() ?? ''),
     );
   }
 }

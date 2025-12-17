@@ -15,7 +15,7 @@ class _ViewFoodPostsScreenState extends State<ViewFoodPostsScreen> {
   final ApiService _apiService = ApiService();
   late Future<List<Donation>> _donations;
 
-  // Filtering state
+  // Filtering state (retained for search functionality)
   String _searchQuery = '';
   String _selectedCategory = 'All';
   String _selectedUrgency = 'All';
@@ -23,16 +23,17 @@ class _ViewFoodPostsScreenState extends State<ViewFoodPostsScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchDonations(); // Fetch posts immediately
+    _fetchDonations(); // Fetch posts immediately, no location needed
   }
 
   void _fetchDonations() {
     setState(() {
+      // API call reverted to simple getAllDonations() without location args
       _donations = _apiService.getAllDonations();
     });
   }
 
-  // Helper functions (omitted for brevity, remain the same)
+  // Helper to filter the list based on search/category/urgency (retains the logic)
   List<Donation> _getFilteredList(List<Donation> allDonations) {
     return allDonations.where((d) {
       final matchesSearch =
@@ -90,6 +91,7 @@ class _ViewFoodPostsScreenState extends State<ViewFoodPostsScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
+        // Reverted title
         title: const Text('Available Food Donations'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -107,6 +109,7 @@ class _ViewFoodPostsScreenState extends State<ViewFoodPostsScreen> {
                   'Available Food Donations',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
+                // Simple status message
                 Text(
                   'Browse posts from all registered restaurants.',
                   style: TextStyle(
@@ -116,94 +119,57 @@ class _ViewFoodPostsScreenState extends State<ViewFoodPostsScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Search and Filter Row (using responsive layout)
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isWide =
-                        constraints.maxWidth > 600; // Check screen width
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 2,
-                          child: TextField(
-                            onChanged: (value) =>
-                                setState(() => _searchQuery = value),
-                            decoration: InputDecoration(
-                              hintText:
-                                  'Search by title, hotel, or location...',
-                              prefixIcon: const Icon(
-                                Icons.search,
-                                color: AppColors.textSecondary,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 0,
-                                horizontal: 10,
-                              ),
-                            ),
+                // Search and Filter Row
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextField(
+                        onChanged: (value) =>
+                            setState(() => _searchQuery = value),
+                        decoration: InputDecoration(
+                          hintText: 'Search by title, hotel, or location...',
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: AppColors.textSecondary,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0,
+                            horizontal: 10,
                           ),
                         ),
-                        if (isWide) ...[
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildFilterDropdown(
-                              label: 'Categories',
-                              options: const ['All', 'veg', 'non-veg', 'mixed'],
-                              currentValue: _selectedCategory,
-                              onChanged: (newValue) =>
-                                  setState(() => _selectedCategory = newValue!),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildFilterDropdown(
-                              label: 'Urgency',
-                              options: const ['All', 'Urgent', 'Standard'],
-                              currentValue: _selectedUrgency,
-                              onChanged: (newValue) =>
-                                  setState(() => _selectedUrgency = newValue!),
-                            ),
-                          ),
-                        ],
-                      ],
-                    );
-                  },
-                ),
-                // Show filters below if the screen is narrow
-                if (MediaQuery.of(context).size.width <= 600)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildFilterDropdown(
-                            label: 'Categories',
-                            options: const ['All', 'veg', 'non-veg', 'mixed'],
-                            currentValue: _selectedCategory,
-                            onChanged: (newValue) =>
-                                setState(() => _selectedCategory = newValue!),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildFilterDropdown(
-                            label: 'Urgency',
-                            options: const ['All', 'Urgent', 'Standard'],
-                            currentValue: _selectedUrgency,
-                            onChanged: (newValue) =>
-                                setState(() => _selectedUrgency = newValue!),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildFilterDropdown(
+                        label: 'Categories',
+                        options: const ['All', 'veg', 'non-veg', 'mixed'],
+                        currentValue: _selectedCategory,
+                        onChanged: (newValue) =>
+                            setState(() => _selectedCategory = newValue!),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildFilterDropdown(
+                        label: 'Urgency',
+                        options: const ['All', 'Urgent', 'Standard'],
+                        currentValue: _selectedUrgency,
+                        onChanged: (newValue) =>
+                            setState(() => _selectedUrgency = newValue!),
+                      ),
+                    ),
+                  ],
+                ),
 
+                // Map button is removed completely
                 const SizedBox(height: 10),
               ],
             ),

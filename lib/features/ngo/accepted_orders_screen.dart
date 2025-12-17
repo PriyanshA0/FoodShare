@@ -3,6 +3,7 @@ import 'package:fwm_sys/core/constants/colors.dart';
 import 'package:fwm_sys/core/services/api_service.dart';
 import 'package:fwm_sys/models/donation_model.dart';
 import 'package:fwm_sys/features/ngo/ngo_order_details_screen.dart';
+import 'package:url_launcher/url_launcher.dart'; // REQUIRED for Map Launch
 
 class AcceptedOrdersScreen extends StatefulWidget {
   const AcceptedOrdersScreen({super.key});
@@ -16,9 +17,8 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
   late Future<List<Donation>> _acceptedDonations;
 
   // State to handle tab filtering
-  String _selectedStatus =
-      'Active'; // Initial status set to the merged 'Active'
-  int _activeCount = 0; // Combined count for Accepted and In Transit
+  String _selectedStatus = 'Active'; // Merged Active tab
+  int _activeCount = 0;
   int _completedCount = 0;
 
   @override
@@ -30,7 +30,6 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // This ensures data is fetched when navigating back to this screen
     _fetchAcceptedDonations();
   }
 
@@ -39,7 +38,6 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
 
     if (!mounted) return;
     setState(() {
-      // Reassigning the future object triggers a fresh fetch
       _acceptedDonations = newFuture;
     });
   }
@@ -53,13 +51,9 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(response['message']!)));
 
-        // FIX: No need to switch tabs, just refresh the data on the current 'Active' tab.
         setState(() {
-          _acceptedDonations = Future.value(
-            [],
-          ); // CRITICAL: Clear old data immediately to show loading spinner
-          _acceptedDonations = _apiService
-              .getAcceptedDonations(); // 2. Trigger new data fetch
+          _acceptedDonations = Future.value([]);
+          _acceptedDonations = _apiService.getAcceptedDonations();
         });
       }
     } catch (e) {
@@ -80,14 +74,11 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(response['message']!)));
 
-        // FIX: Switch to 'Completed' tab after successful pickup
+        // Switch to 'Completed' tab after successful pickup
         setState(() {
-          _acceptedDonations = Future.value(
-            [],
-          ); // CRITICAL: Clear old data immediately to show loading spinner
-          _selectedStatus = 'Completed'; // 1. Update the selected tab state
-          _acceptedDonations = _apiService
-              .getAcceptedDonations(); // 2. Trigger new data fetch
+          _acceptedDonations = Future.value([]);
+          _selectedStatus = 'Completed';
+          _acceptedDonations = _apiService.getAcceptedDonations();
         });
       }
     } catch (e) {
@@ -99,10 +90,61 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
     }
   }
 
+  // --- Map Launcher Function (FIXED FOR CROSS-DEVICE COMPATIBILITY) ---
+  void _launchMap(Donation donation) async {
+    // FIX: Use donation-specific latitude/longitude fields
+    final lat = donation.latitude;
+    final lon = donation.longitude;
+    // END FIX
+
+    final address = donation.pickupLocation;
+    final name = donation.restaurantName;
+
+    String mapUrl;
+
+    if (lat != null && lon != null) {
+      // PRIORITY 1: Use the geo: scheme for native apps (Android/iOS)
+      mapUrl =
+          'geo:$lat,$lon?q=$lat,$lon(${Uri.encodeComponent(name ?? 'Pickup Location')})';
+    } else {
+      // FALLBACK: Use Google Maps URL with encoded address for search
+      final query = Uri.encodeComponent('${name ?? ''}, ${address ?? ''}');
+      mapUrl = 'https://maps.google.com/maps?q=$query';
+    }
+
+    final uri = Uri.parse(mapUrl);
+
+    // Attempt to launch the generated URI
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      // If the map launch fails, try the general web fallback URL directly
+      if (lat != null && lon != null) {
+        mapUrl = 'https://maps.google.com/maps?q=$lat,$lon';
+        final webUri = Uri.parse(mapUrl);
+        if (await canLaunchUrl(webUri)) {
+          await launchUrl(webUri, mode: LaunchMode.externalApplication);
+          return;
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'FATAL ERROR: Could not open map. This is likely a configuration error (missing AndroidManifest query permissions). Please contact support.',
+            ),
+          ),
+        );
+        print('Map Launch Failure: Cannot launch URL $mapUrl');
+      }
+    }
+  }
+  // -----------------------------------
+
   // Helper to filter the list based on the selected tab
   List<Donation> _getFilteredList(List<Donation> donations) {
     if (_selectedStatus == 'Active') {
-      // MERGED LOGIC: Show both 'accepted' AND 'in_transit' orders
       return donations
           .where((d) => d.status == 'accepted' || d.status == 'in_transit')
           .toList();
@@ -117,7 +159,7 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
     int accepted = donations.where((d) => d.status == 'accepted').length;
     int inTransit = donations.where((d) => d.status == 'in_transit').length;
 
-    _activeCount = accepted + inTransit; // Combined count
+    _activeCount = accepted + inTransit;
     _completedCount = donations.where((d) => d.status == 'picked_up').length;
   }
 
@@ -160,15 +202,13 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
           FutureBuilder<List<Donation>>(
             future: _acceptedDonations,
             builder: (context, snapshot) {
-              // Recalculate counts when data is available
               if (snapshot.connectionState == ConnectionState.done &&
                   snapshot.hasData) {
                 _calculateStatusCounts(snapshot.data!);
               }
 
-              // Updated Tab Titles (Only Active and Completed)
               final List<String> tabTitles = [
-                'Active ($_activeCount)', // Merged tab
+                'Active ($_activeCount)',
                 'Completed ($_completedCount)',
               ];
 
@@ -212,7 +252,6 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
             child: FutureBuilder<List<Donation>>(
               future: _acceptedDonations,
               builder: (context, snapshot) {
-                // Check ConnectionState first to prevent faulty filtering
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 } else if (snapshot.hasError) {
@@ -232,7 +271,6 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
                   );
                 }
 
-                // Data is available, now filter it
                 final filteredList = _getFilteredList(snapshot.data!);
 
                 if (filteredList.isEmpty) {
@@ -251,6 +289,8 @@ class _AcceptedOrdersScreenState extends State<AcceptedOrdersScreen> {
                       donation: donation,
                       onPickedUp: () => _markAsPickedUp(donation.id),
                       onInTransit: () => _markInTransit(donation.id),
+                      onViewMap: () =>
+                          _launchMap(donation), // PASS THE NEW HANDLER
                     );
                   },
                 );
@@ -268,12 +308,14 @@ class AcceptedDonationCard extends StatelessWidget {
   final Donation donation;
   final VoidCallback onPickedUp;
   final VoidCallback onInTransit;
+  final VoidCallback onViewMap; // NEW CALLBACK
 
   const AcceptedDonationCard({
     super.key,
     required this.donation,
     required this.onPickedUp,
     required this.onInTransit,
+    required this.onViewMap, // ADDED
   });
 
   Color _getStatusColor(String status) {
@@ -444,24 +486,45 @@ class AcceptedDonationCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      // View Details Button
-                      Center(
-                        child: TextButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => NGOOrderDetailsScreen(
-                                  donationId: donation.id,
+                      // --- MAP BUTTON AND DETAILS ---
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: onViewMap, // MAP HANDLER
+                              icon: const Icon(
+                                Icons.map_outlined,
+                                color: AppColors.info,
+                              ),
+                              label: const Text('View Map'),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 40),
+                                side: BorderSide(color: AppColors.info),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => NGOOrderDetailsScreen(
+                                      donationId: donation.id,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Text(
+                                'View Details',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
                                 ),
                               ),
-                            );
-                          },
-                          child: Text(
-                            'View Full Details',
-                            style: TextStyle(color: AppColors.textSecondary),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),

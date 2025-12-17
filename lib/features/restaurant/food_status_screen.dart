@@ -31,6 +31,13 @@ class _FoodStatusScreenState extends State<FoodStatusScreen> {
     _fetchDonationsAndStats();
   }
 
+  // Method to trigger refresh when returning from details/upload screen
+  void _refreshData() {
+    setState(() {
+      _myDonations = _apiService.getMyDonations();
+    });
+  }
+
   // Refreshes data and updates tab counts
   void _fetchDonationsAndStats() {
     _myDonations = _apiService.getMyDonations();
@@ -73,6 +80,9 @@ class _FoodStatusScreenState extends State<FoodStatusScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _refreshData),
+        ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,13 +115,14 @@ class _FoodStatusScreenState extends State<FoodStatusScreen> {
                   ),
                 ),
                 ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
+                  onPressed: () async {
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) => const DonateFoodScreen(),
                       ),
                     );
+                    _refreshData(); // Refresh list after returning
                   },
                   icon: const Icon(Icons.upload, size: 20, color: Colors.white),
                   label: const Text(
@@ -133,7 +144,7 @@ class _FoodStatusScreenState extends State<FoodStatusScreen> {
             ),
           ),
 
-          // Status Tabs (Moved inside the FutureBuilder for count updates)
+          // Status Tabs
           FutureBuilder<List<Donation>>(
             future: _myDonations,
             builder: (context, snapshot) {
@@ -212,6 +223,7 @@ class _FoodStatusScreenState extends State<FoodStatusScreen> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 } else if (snapshot.hasError) {
+                  // Show specific error for debugging
                   return Center(child: Text('Error: ${snapshot.error}'));
                 } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
                   return const Center(child: Text('No donations posted yet.'));
@@ -277,6 +289,37 @@ class DonationStatusCard extends StatelessWidget {
       }
     } catch (_) {}
     return false;
+  }
+
+  // Helper for displaying details in a single column
+  Widget _buildDetailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -381,12 +424,14 @@ class DonationStatusCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      donation.title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
+                    Expanded(
+                      child: Text(
+                        donation.title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ),
                     // Status Badge (Aligned right, matching design)
@@ -427,52 +472,23 @@ class DonationStatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
 
-                // Quantity and Expiry Row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.storage,
-                          size: 16,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text('Quantity: ${donation.quantity} servings'),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.schedule,
-                          size: 16,
-                          color: AppColors.textSecondary,
-                        ),
-                        const SizedBox(width: 4),
-                        Text('Expiry Time: ${donation.expiryTime}'),
-                      ],
-                    ),
-                  ],
+                // Quantity, Expiry, Location details using single column style
+                _buildDetailRow(
+                  Icons.storage,
+                  'Quantity',
+                  '${donation.quantity} servings',
                 ),
-                const SizedBox(height: 10),
+                _buildDetailRow(
+                  Icons.schedule,
+                  'Expiry Time',
+                  donation.expiryTime,
+                ),
+                _buildDetailRow(
+                  Icons.location_on,
+                  'Pickup Location',
+                  donation.pickupLocation ?? 'N/A',
+                ),
 
-                // Location Row
-                Row(
-                  children: [
-                    Icon(
-                      Icons.location_on,
-                      size: 16,
-                      color: AppColors.textSecondary,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        'Pickup Location: ${donation.pickupLocation ?? 'N/A'}',
-                      ),
-                    ),
-                  ],
-                ),
                 const SizedBox(height: 10),
 
                 // Status/Accepted Info Box (Matching yellow/info box design)
@@ -503,15 +519,16 @@ class DonationStatusCard extends StatelessWidget {
 
                 // View Details Button
                 ElevatedButton.icon(
-                  onPressed: () {
-                    // Navigate to the Order Details Screen
-                    Navigator.push(
+                  onPressed: () async {
+                    // Navigate to the Order Details Screen and refresh when done
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
                             OrderDetailsScreen(donationId: donation.id),
                       ),
                     );
+                    // No need to manually refresh here, the status screen handles its own fetch
                   },
                   icon: const Icon(Icons.visibility, color: Colors.white),
                   label: const Text(

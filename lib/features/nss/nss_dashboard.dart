@@ -3,69 +3,143 @@ import 'package:fwm_sys/core/constants/colors.dart';
 import 'package:fwm_sys/core/services/api_service.dart';
 import 'package:fwm_sys/features/ngo/view_food_posts_screen.dart';
 import 'package:fwm_sys/features/ngo/accepted_orders_screen.dart';
-import 'package:fwm_sys/features/ngo/collection_summary_screen.dart';
-import 'package:fwm_sys/features/common/notifications_screen.dart';
 import 'package:fwm_sys/features/common/profile_screen.dart';
 import 'package:fwm_sys/features/auth/login_screen.dart';
-import 'dart:async'; // Required for Timer
+import 'dart:async';
+import 'dart:io';
 
-class NGODashboard extends StatefulWidget {
-  const NGODashboard({super.key});
+class NSSDashboard extends StatefulWidget {
+  const NSSDashboard({super.key});
 
   @override
-  State<NGODashboard> createState() => _NGODashboardState();
+  State<NSSDashboard> createState() => _NSSDashboardState();
 }
 
-class _NGODashboardState extends State<NGODashboard> {
-  // CRITICAL: Future to hold the combined data fetch result
+class _NSSDashboardState extends State<NSSDashboard> {
   late Future<Map<String, dynamic>> _compositeDataFuture;
-  late Timer _timer;
+  // FIX: Changed to nullable Timer to prevent LateInitializationError
+  Timer? _timer;
+  String? _errorMessage;
+  bool _isAuthError = false;
+
+  // New state variables to hold data outside the Future, preventing data loss on error
+  Map<String, dynamic> _currentStats = {};
+  Map<String, dynamic> _currentUserData = {};
 
   @override
   void initState() {
     super.initState();
-    // 1. Initial Data Fetch
-    _fetchNgoCompositeData();
-    // 2. Setup Auto-Refresh Timer
+    // Initialize _compositeDataFuture immediately
+    _compositeDataFuture = _fetchNSSCompositeData();
     _startAutoRefresh();
   }
 
   @override
   void dispose() {
-    // CRITICAL: Stop the timer when the widget is removed
-    _timer.cancel();
+    // FIX: Safely cancel the timer using the null-conditional operator
+    _timer?.cancel();
     super.dispose();
   }
 
   void _startAutoRefresh() {
-    // FIX: 5-second refresh interval to prevent blinking.
+    // Ensure only one timer is active
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (mounted) {
-        _fetchNgoCompositeData();
+      if (mounted && !_isAuthError) {
+        _fetchNSSCompositeData(silent: true); // Run silently on refresh
+      } else if (mounted && _isAuthError) {
+        _timer?.cancel();
       }
     });
   }
 
-  // Merged function to fetch stats and user data
-  void _fetchNgoCompositeData() {
+  // Refactored to handle individual API call failures and update state
+  Future<Map<String, dynamic>> _fetchNSSCompositeData({
+    bool silent = false,
+  }) async {
     final statsFuture = ApiService().fetchDashboardStats();
-    final userFuture = ApiService().fetchUserData();
+    final userFuture = ApiService().fetchNSSUserData();
 
-    setState(() {
-      _compositeDataFuture = Future.wait([statsFuture, userFuture])
-          .then((results) {
-            return {'stats': results[0], 'user_data': results[1]};
-          })
-          .catchError((e) {
-            // CRITICAL: Throw the error so the FutureBuilder captures the detailed message.
-            throw Exception(e.toString());
-          });
-    });
+    // --- 1. Fetch User Data (CRITICAL) ---
+    // This call is known to succeed (Status 200)
+    Map<String, dynamic> userData;
+    try {
+      userData = await userFuture;
+      _currentUserData = userData;
+      if (mounted && !silent) {
+        setState(() {}); // Redraw immediately with critical profile data
+      }
+    } catch (e) {
+      // If user data fails, this is a CRITICAL AUTH failure. Stop and notify.
+      if (mounted) {
+        _handleApiError(e, isCritical: true);
+      }
+      return {'stats': _currentStats, 'user_data': _currentUserData};
+    }
+
+    // --- 2. Fetch Stats (Can fail without stopping the page) ---
+    Map<String, dynamic> stats;
+    try {
+      stats = await statsFuture;
+      _currentStats = stats;
+      if (mounted) {
+        setState(() {
+          _errorMessage = null; // Clear error on successful stats fetch
+        });
+      }
+    } catch (e) {
+      // If stats fail (which it currently does with 401), show an error but keep the profile data.
+      if (mounted) {
+        _handleApiError(e, isCritical: false);
+      }
+      _currentStats = {}; // Reset stats if fetch fails
+      // We still return the full data structure, including the good profile data
+    }
+
+    return {'stats': _currentStats, 'user_data': _currentUserData};
+  }
+
+  void _handleApiError(Object e, {required bool isCritical}) {
+    if (!mounted) return;
+
+    String errorDetail = e.toString();
+
+    // Check for 401/403/Credentials not found (The primary issue)
+    if (errorDetail.contains('Unauthorized') ||
+        errorDetail.contains('401') ||
+        errorDetail.contains('403') ||
+        errorDetail.contains('credentials not found')) {
+      _errorMessage = isCritical
+          ? 'CRITICAL: Authentication failed for profile. Please LOGOUT.'
+          : 'WARNING: Dashboard stats failed (Auth/Role error). Check server logs.';
+      _isAuthError = isCritical;
+      if (isCritical) {
+        _timer?.cancel();
+      }
+    }
+    // Check for 404 (Missing profile data, e.g., missing nss_details entry)
+    else if (errorDetail.contains('404') ||
+        errorDetail.contains('Profile Details Missing')) {
+      _errorMessage = 'Profile setup incomplete. Please contact admin.';
+      _isAuthError = false;
+    }
+    // Check for connection/generic error
+    else if (errorDetail.contains('SocketException') || e is SocketException) {
+      _errorMessage = 'Connection Error: Please check your network.';
+      _isAuthError = false;
+    } else {
+      _errorMessage = isCritical
+          ? 'Critical Data failed to load. Error: $e'
+          : 'Stats failed to load. Try refresh.';
+      _isAuthError = false;
+      print('NSS Dashboard Fetch Detailed Error: $e');
+    }
+
+    setState(() {});
   }
 
   Future<void> _handleLogout(BuildContext context) async {
-    // Stop refresh before logging out
-    _timer.cancel();
+    _timer?.cancel();
     await ApiService().logout();
     if (context.mounted) {
       Navigator.of(context).pushAndRemoveUntil(
@@ -75,42 +149,63 @@ class _NGODashboardState extends State<NGODashboard> {
     }
   }
 
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: 8, bottom: 16),
+      decoration: BoxDecoration(
+        color: AppColors.error.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.error),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber, color: AppColors.error),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          // Show Logout button for critical errors
+          TextButton(
+            onPressed: () => _handleLogout(context),
+            child: const Text(
+              'LOGOUT',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // The top-level FutureBuilder now uses the state variable
     return FutureBuilder<Map<String, dynamic>>(
       future: _compositeDataFuture,
       builder: (context, snapshot) {
-        final data = snapshot.data;
-        final bool hasError = snapshot.hasError;
+        // Use current state variables for data presentation, not snapshot.data
+        // This preserves the profile data even if the future throws an error.
+        final stats = _currentStats;
+        final userData = _currentUserData;
 
-        if (hasError) {
-          // Display the full, detailed error message from the exception (including the PHP DEBUG message)
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Text(
-                'Dashboard Load Error (NGO): ${snapshot.error}',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.error),
-              ),
-            ),
-          );
-        }
+        // Use snapshot to only show CircularProgressIndicator on first load
+        final bool isWaitingForInitialData =
+            snapshot.connectionState == ConnectionState.waiting &&
+            userData.isEmpty;
 
-        // Show loading spinner if data isn't ready
-        if (data == null) {
+        if (isWaitingForInitialData) {
           return const Scaffold(
-            backgroundColor: AppColors.background,
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // Fetch necessary data parts
-        final stats = data['stats'] ?? {};
-        final userData = data['user_data'] ?? {};
-
-        // --- SAFELY EXTRACT AND CAST DATA ---
+        // --- SAFELY EXTRACT NSS DATA ---
         final int availablePostsCount =
             int.tryParse(stats['available_posts']?.toString() ?? '0') ?? 0;
         final int activeOrdersCount =
@@ -122,52 +217,32 @@ class _NGODashboardState extends State<NGODashboard> {
             int.tryParse(stats['meals_served_estimate']?.toString() ?? '0') ??
             0;
 
-        // FIX 1: Extract Organization Name and Contact Person reliably
-        String orgName = userData['name'] ?? 'Food Aid Foundation';
-        final String? contactPersonRaw = userData['contact_person'] as String?;
+        // Use null checks (??) to display placeholders if data is missing,
+        // relying on the data cached in _currentUserData
+        String collegeName = userData['college_name'] ?? 'NSS College Unit';
+        String studentName = userData['student_name'] ?? 'Representative';
+        String unitNo = userData['unit_no'] ?? 'N/A';
+        String vecNumber = userData['vec_number']?.toString() ?? 'N/A';
 
-        // 2. Check if the retrieved value is non-null AND non-empty.
-        String contactPerson =
-            (contactPersonRaw != null && contactPersonRaw.isNotEmpty)
-            ? contactPersonRaw
-            : 'Volunteer';
-        String registrationNo = userData['verification_detail'] ?? 'N/A';
-        String volunteers = userData['volunteers_count']?.toString() ?? '0';
-        String address = userData['address'] ?? 'N/A';
-        String contactNo = userData['contact_number'] ?? 'N/A';
-
-        // Safely format strings
         String availablePosts = availablePostsCount.toString();
         String pendingPickups = activeOrdersCount.toString();
         String foodCollected = '${foodCollectedKg.toStringAsFixed(0)} kg';
         String mealsDistributed = '$mealsDistributedEstimate+';
 
-        // --- DYNAMICALLY RETURNED SCAFFOLD (uses orgName in title) ---
         return Scaffold(
           backgroundColor: AppColors.background,
-
-          // --- DYNAMIC APP BAR (uses fetched orgName) ---
           appBar: AppBar(
-            // Ensures no default back button is added
             automaticallyImplyLeading: false,
-
-            // --- USES THE FETCHED NGO NAME ---
             title: Text(
-              orgName, // <--- orgName is now accessible here!
+              'NSS - $collegeName',
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.bold,
               ),
             ),
-
-            // Set a solid, visible background color
             backgroundColor: Colors.white,
-
-            // Add a slight shadow
             elevation: 2,
-
             actions: [
-              // --- NEW: View Food Posts Icon (beside the bell) ---
               IconButton(
                 icon: const Icon(Icons.search, color: AppColors.textPrimary),
                 onPressed: () {
@@ -179,25 +254,6 @@ class _NGODashboardState extends State<NGODashboard> {
                   );
                 },
               ),
-              // --- Existing: Notifications Icon (Bell) ---
-              IconButton(
-                icon: const Badge(
-                  //label: Text('0'),
-                  child: Icon(
-                    Icons.notifications_none,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const NotificationsScreen(),
-                    ),
-                  );
-                },
-              ),
-              // --- Existing: Profile Icon ---
               IconButton(
                 icon: const Icon(
                   Icons.person_outline,
@@ -207,12 +263,12 @@ class _NGODashboardState extends State<NGODashboard> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
+                      // Uses the generic profile screen, which must fetch NSS data
                       builder: (context) => const ProfileScreen(),
                     ),
                   );
                 },
               ),
-              // --- Existing: Logout Icon ---
               IconButton(
                 icon: const Icon(Icons.logout, color: AppColors.textPrimary),
                 onPressed: () => _handleLogout(context),
@@ -226,22 +282,25 @@ class _NGODashboardState extends State<NGODashboard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- HEADER: DYNAMICALLY SHOWING USER NAME ---
+                  // Error banner is shown here if _errorMessage is not null
+                  if (_errorMessage != null) _buildErrorBanner(_errorMessage!),
+
+                  // --- HEADER ---
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 20.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Welcome, $contactPerson!',
+                          'Welcome, $studentName (Unit $unitNo)!',
                           style: TextStyle(
                             fontSize: 18,
                             color: AppColors.textPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const Text(
-                          'Find and collect food donations from local restaurants',
+                        Text(
+                          'VEC Count: $vecNumber Students',
                           style: TextStyle(
                             fontSize: 16,
                             color: AppColors.textSecondary,
@@ -252,28 +311,28 @@ class _NGODashboardState extends State<NGODashboard> {
                   ),
 
                   // === STATS CARDS ===
-                  _buildNgoStatCard(
+                  _buildStatCard(
                     title: 'Available Posts',
                     value: availablePosts,
                     subtitle: 'Ready to accept',
                     icon: Icons.search,
                     color: AppColors.warning,
                   ),
-                  _buildNgoStatCard(
+                  _buildStatCard(
                     title: 'Pending Pickups',
                     value: pendingPickups,
                     subtitle: 'Awaiting collection',
                     icon: Icons.inventory_2_outlined,
                     color: AppColors.info,
                   ),
-                  _buildNgoStatCard(
+                  _buildStatCard(
                     title: 'Food Collected',
                     value: foodCollected,
                     subtitle: 'Total confirmed collections',
                     icon: Icons.ssid_chart,
                     color: AppColors.success,
                   ),
-                  _buildNgoStatCard(
+                  _buildStatCard(
                     title: 'Meals Distributed',
                     value: mealsDistributed,
                     subtitle: 'People helped',
@@ -282,12 +341,12 @@ class _NGODashboardState extends State<NGODashboard> {
                   ),
 
                   const SizedBox(height: 24),
-                  // === QUICK ACTION CARDS ===
-                  _buildNgoActionCard(
+                  // === QUICK ACTION CARDS (Similar to NGO) ===
+                  _buildActionCard(
                     context,
                     title: 'View Food Posts',
                     subtitle:
-                        'Browse available food donations from restaurants and hotels',
+                        'Browse available food donations from local sources',
                     icon: Icons.search_outlined,
                     iconColor: AppColors.warning,
                     badgeText: '$availablePosts new donations available',
@@ -300,7 +359,7 @@ class _NGODashboardState extends State<NGODashboard> {
                       );
                     },
                   ),
-                  _buildNgoActionCard(
+                  _buildActionCard(
                     context,
                     title: 'My Accepted Orders',
                     subtitle:
@@ -317,53 +376,19 @@ class _NGODashboardState extends State<NGODashboard> {
                       );
                     },
                   ),
-                  _buildNgoActionCard(
-                    context,
-                    title: 'Collection Summary',
-                    subtitle:
-                        'View your impact, analytics and collection history',
-                    icon: Icons.bar_chart_outlined,
-                    iconColor: const Color(0xFF9C27B0),
-                    badgeText: '',
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CollectionSummaryScreen(),
-                        ),
-                      );
-                    },
-                  ),
 
-                  const SizedBox(height: 24),
-                  // === ORGANIZATION DETAILS (Using Fetched Data) ===
-                  const Text(
-                    'Organization Details',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 10),
-                  _buildNgoDetailCard(
-                    orgName: orgName,
-                    regNo: registrationNo,
-                    volunteers: volunteers,
-                    address: address,
-                    contact: contactNo,
-                  ),
-
-                  // FIX: Add space to clear the Bottom Navigation Bar
                   const SizedBox(height: 80),
                 ],
               ),
             ),
           ),
         );
-        // --- END DYNAMICALLY RETURNED SCAFFOLD ---
       },
     );
   }
 
-  // --- Helper methods (omitted for brevity) ---
-  Widget _buildNgoStatCard({
+  // --- Helper methods (reused from NGO Dashboard) ---
+  Widget _buildStatCard({
     required String title,
     required String value,
     required String subtitle,
@@ -428,7 +453,7 @@ class _NGODashboardState extends State<NGODashboard> {
     );
   }
 
-  Widget _buildNgoActionCard(
+  Widget _buildActionCard(
     BuildContext context, {
     required String title,
     required String subtitle,
@@ -505,64 +530,6 @@ class _NGODashboardState extends State<NGODashboard> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildNgoDetailCard({
-    required String orgName,
-    required String regNo,
-    required String volunteers,
-    required String address,
-    required String contact,
-  }) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(25),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.15),
-              spreadRadius: 2,
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildDetailRow('Organization Name', orgName),
-            _buildDetailRow('Registration Number', regNo),
-            _buildDetailRow('Volunteers', '$volunteers active volunteers'),
-            _buildDetailRow('Contact', contact),
-            _buildDetailRow('Address', address),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-        ],
       ),
     );
   }
